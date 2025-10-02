@@ -14,7 +14,7 @@ FROM ghcr.io/terraform-linters/tflint:v0.59.1 AS tflint
 FROM alpine/helm:3.19.0 AS helm
 FROM golang:1.25.1-alpine AS golang
 FROM golangci/golangci-lint:v2.5.0 AS golangci-lint
-FROM goreleaser/goreleaser:v2.12.2 AS goreleaser
+FROM goreleaser/goreleaser:v2.12.3 AS goreleaser
 FROM hadolint/hadolint:v2.14.0-alpine AS dockerfile-lint
 FROM registry.k8s.io/kustomize/kustomize:v5.7.1 AS kustomize
 FROM hashicorp/terraform:1.13.3 AS terraform
@@ -30,7 +30,7 @@ FROM dart:3.9.3-sdk AS dart
 FROM mcr.microsoft.com/dotnet/sdk:9.0.305-alpine3.21 AS dotnet-sdk
 FROM mcr.microsoft.com/powershell:7.5-alpine-3.20 AS powershell
 FROM composer/composer:2.8.12 AS php-composer
-FROM ghcr.io/aquasecurity/trivy:0.66.0 AS trivy
+FROM ghcr.io/aquasecurity/trivy:0.67.0 AS trivy
 FROM ghcr.io/yannh/kubeconform:v0.7.0 AS kubeconform
 
 FROM python:3.13.7-alpine3.22 AS python-base
@@ -450,13 +450,14 @@ COPY --from=dotenv-linter /dotenv-linter /usr/bin/
 #########################
 ENV PATH="${PATH}:/venvs/ansible-lint/bin"
 ENV PATH="${PATH}:/venvs/black/bin"
-ENV PATH="${PATH}:/venvs/checkov/bin"
 ENV PATH="${PATH}:/venvs/cfn-lint/bin"
+ENV PATH="${PATH}:/venvs/checkov/bin"
 ENV PATH="${PATH}:/venvs/cpplint/bin"
 ENV PATH="${PATH}:/venvs/flake8/bin"
 ENV PATH="${PATH}:/venvs/isort/bin"
 ENV PATH="${PATH}:/venvs/mypy/bin"
 ENV PATH="${PATH}:/venvs/nbqa/bin"
+ENV PATH="${PATH}:/venvs/pre-commit/bin"
 ENV PATH="${PATH}:/venvs/pylint/bin"
 ENV PATH="${PATH}:/venvs/ruff/bin"
 ENV PATH="${PATH}:/venvs/snakefmt/bin"

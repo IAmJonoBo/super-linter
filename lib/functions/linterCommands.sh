@@ -65,6 +65,7 @@ function InitInputConsumeCommands() {
   LINTER_COMMANDS_ARRAY_ANSIBLE+=("${INPUT_CONSUME_COMMAND[@]}")
   LINTER_COMMANDS_ARRAY_GO_MODULES+=("${INPUT_CONSUME_COMMAND[@]}")
   LINTER_COMMANDS_ARRAY_RUST_CLIPPY+=("${INPUT_CONSUME_COMMAND[@]}")
+  LINTER_COMMANDS_ARRAY_PRE_COMMIT+=("${INPUT_CONSUME_COMMAND[@]}")
 }
 
 function InitPowerShellCommand() {
@@ -119,8 +120,8 @@ if [ "${BASH_EXEC_IGNORE_LIBRARIES}" == 'true' ]; then
   debug "Enabling bash-exec option to ignore shell library files."
   LINTER_COMMANDS_ARRAY_BASH_EXEC+=('true')
 fi
-LINTER_COMMANDS_ARRAY_BIOME_FORMAT=(biome format --error-on-warnings)
-LINTER_COMMANDS_ARRAY_BIOME_LINT=(biome lint --error-on-warnings)
+LINTER_COMMANDS_ARRAY_BIOME_FORMAT=(biome format --error-on-warnings --no-errors-on-unmatched)
+LINTER_COMMANDS_ARRAY_BIOME_LINT=(biome lint --error-on-warnings --no-errors-on-unmatched)
 LINTER_COMMANDS_ARRAY_CHECKOV=(checkov --config-file "${CHECKOV_LINTER_RULES}")
 if CheckovConfigurationFileContainsDirectoryOption "${CHECKOV_LINTER_RULES}"; then
   # Consume the input as we do with ANSIBLE
@@ -252,6 +253,17 @@ LINTER_COMMANDS_ARRAY_PHP_PHPCS=(phpcs --standard="${PHP_PHPCS_LINTER_RULES}")
 LINTER_COMMANDS_ARRAY_PHP_PHPSTAN=(phpstan analyse --no-progress --no-ansi --memory-limit 1G -c "${PHP_PHPSTAN_LINTER_RULES}")
 LINTER_COMMANDS_ARRAY_PHP_PSALM=(psalm --config="${PHP_PSALM_LINTER_RULES}")
 LINTER_COMMANDS_ARRAY_POWERSHELL=(Invoke-ScriptAnalyzer -EnableExit -Settings "${POWERSHELL_LINTER_RULES}" -Path '{}')
+LINTER_COMMANDS_ARRAY_PRE_COMMIT=(pre-commit run --config "${PRE_COMMIT_LINTER_RULES}")
+if [[ "${VALIDATE_ALL_CODEBASE:-"not set"}" == "false" ]]; then
+  LINTER_COMMANDS_ARRAY_PRE_COMMIT+=("${PRE_COMMIT_FROM_REF_OPTIONS[@]}" "${GITHUB_BEFORE_SHA}")
+  LINTER_COMMANDS_ARRAY_PRE_COMMIT+=("${PRE_COMMIT_TO_REF_OPTIONS[@]}" "${GITHUB_SHA}")
+else
+  LINTER_COMMANDS_ARRAY_PRE_COMMIT+=("${PRE_COMMIT_ALL_FILES_OPTION[@]}")
+fi
+if [ -n "${PRE_COMMIT_COMMAND_ARGS:-}" ]; then
+  export PRE_COMMIT_COMMAND_ARGS
+  AddOptionsToCommand "LINTER_COMMANDS_ARRAY_PRE_COMMIT" "${PRE_COMMIT_COMMAND_ARGS}"
+fi
 LINTER_COMMANDS_ARRAY_PROTOBUF=(protolint lint -config_path "${PROTOBUF_LINTER_RULES}")
 LINTER_COMMANDS_ARRAY_PYTHON_BLACK=(black --config "${PYTHON_BLACK_LINTER_RULES}")
 LINTER_COMMANDS_ARRAY_PYTHON_PYLINT=(pylint --rcfile "${PYTHON_PYLINT_LINTER_RULES}")
