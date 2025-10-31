@@ -12,6 +12,7 @@ function ValidateBooleanConfigurationVariables() {
   ValidateBooleanVariable "ENFORCE_COMMITLINT_CONFIGURATION_CHECK" "${ENFORCE_COMMITLINT_CONFIGURATION_CHECK}"
   ValidateBooleanVariable "EXPORT_GITHUB_TOKEN" "${EXPORT_GITHUB_TOKEN}"
   ValidateBooleanVariable "FAIL_ON_CONFLICTING_TOOLS_ENABLED" "${FAIL_ON_CONFLICTING_TOOLS_ENABLED}"
+  ValidateBooleanVariable "FAIL_ON_INVALID_GITHUB_ACTIONS_EVENT_CONFIGURATION" "${FAIL_ON_INVALID_GITHUB_ACTIONS_EVENT_CONFIGURATION}"
   ValidateBooleanVariable "FIX_MODE_ENABLED" "${FIX_MODE_ENABLED}"
   ValidateBooleanVariable "FIX_MODE_TEST_CASE_RUN" "${FIX_MODE_TEST_CASE_RUN}"
   ValidateBooleanVariable "IGNORE_GENERATED_FILES" "${IGNORE_GENERATED_FILES}"
@@ -28,6 +29,7 @@ function ValidateBooleanConfigurationVariables() {
   ValidateBooleanVariable "SAVE_SUPER_LINTER_SUMMARY" "${SAVE_SUPER_LINTER_SUMMARY}"
   ValidateBooleanVariable "SSH_INSECURE_NO_VERIFY_GITHUB_KEY" "${SSH_INSECURE_NO_VERIFY_GITHUB_KEY}"
   ValidateBooleanVariable "SSH_SETUP_GITHUB" "${SSH_SETUP_GITHUB}"
+  ValidateBooleanVariable "STRIP_DEFAULT_WORKSPACE_FOR_REGEX" "${STRIP_DEFAULT_WORKSPACE_FOR_REGEX}"
   ValidateBooleanVariable "SUPPRESS_FILE_TYPE_WARN" "${SUPPRESS_FILE_TYPE_WARN}"
   ValidateBooleanVariable "SUPPRESS_POSSUM" "${SUPPRESS_POSSUM}"
   ValidateBooleanVariable "TEST_CASE_RUN" "${TEST_CASE_RUN}"
@@ -69,10 +71,18 @@ InitializeGitHubWorkspace() {
 }
 
 function ValidateFindMode() {
-  debug "Validating find mode. USE_FIND_ALGORITHM: ${USE_FIND_ALGORITHM}, VALIDATE_ALL_CODEBASE: ${VALIDATE_ALL_CODEBASE}"
-  if [[ "${USE_FIND_ALGORITHM}" == "true" ]] && [[ "${VALIDATE_ALL_CODEBASE}" == "false" ]]; then
-    error "Setting USE_FIND_ALGORITHM to true and VALIDATE_ALL_CODEBASE to false is not supported because super-linter relies on Git to validate changed files."
-    return 1
+  debug "Validating find mode. USE_FIND_ALGORITHM: ${USE_FIND_ALGORITHM}, VALIDATE_ALL_CODEBASE: ${VALIDATE_ALL_CODEBASE:-"not set"}, DEFAULT_BRANCH: ${DEFAULT_BRANCH:-"not set"}"
+  if [[ "${USE_FIND_ALGORITHM}" == "true" ]]; then
+
+    if [[ "${VALIDATE_ALL_CODEBASE}" == "false" ]]; then
+      error "Setting USE_FIND_ALGORITHM to ${USE_FIND_ALGORITHM} and VALIDATE_ALL_CODEBASE to ${VALIDATE_ALL_CODEBASE} is not supported because Super-linter relies on Git to validate changed files."
+      return 1
+    fi
+
+    if [[ -n "${DEFAULT_BRANCH:-}" ]]; then
+      error "Setting USE_FIND_ALGORITHM to ${USE_FIND_ALGORITHM} and DEFAULT_BRANCH to ${DEFAULT_BRANCH} is not supported because Super-linter doesn't consider the value DEFAULT_BRANCH when not using Git."
+      return 1
+    fi
   fi
 }
 
@@ -380,14 +390,19 @@ InitializeGitBeforeShaReference() {
 
     GIT_BEFORE_SHA_HEAD="${GIT_BEFORE_SHA_HEAD}~${GITHUB_EVENT_COMMIT_COUNT}"
   elif [[ "${GITHUB_EVENT_NAME}" == "merge_group" ]] ||
-    [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+    [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]] ||
+    [[ "${GITHUB_EVENT_NAME}" == "pull_request_target" ]] ||
+    [[ "${GITHUB_EVENT_NAME}" == "schedule" ]] ||
+    [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
     GIT_BEFORE_SHA_HEAD="${DEFAULT_BRANCH}"
+  else
+    error "GitHub event not supported: ${GITHUB_EVENT_NAME}. Create a new issue in the Super-linter repository so the developers can look into this."
+    return 1
   fi
 
   debug "GIT_BEFORE_SHA_HEAD: ${GIT_BEFORE_SHA_HEAD}"
 
-  # shellcheck disable=SC2086  # We checked that GITHUB_EVENT_COMMIT_COUNT is an integer
-  GITHUB_BEFORE_SHA="$(git -C "${GITHUB_WORKSPACE}" rev-parse ${GIT_BEFORE_SHA_HEAD})"
+  GITHUB_BEFORE_SHA="$(git -C "${GITHUB_WORKSPACE}" rev-parse "${GIT_BEFORE_SHA_HEAD}")"
   local RET_CODE=$?
   if [[ "${RET_CODE}" -gt 0 ]]; then
     error "Failed to initialize GITHUB_BEFORE_SHA for a ${GITHUB_EVENT_NAME} event. Output: ${GITHUB_BEFORE_SHA}"
@@ -405,7 +420,7 @@ InitializeGitBeforeShaReference() {
 
 ValidateGitShaReference() {
   local SHA_REFERENCE="${1}"
-  debug "Validating GITHUB_BEFORE_SHA: ${SHA_REFERENCE}"
+  debug "Validating SHA_REFERENCE: ${SHA_REFERENCE}"
   if [ -z "${SHA_REFERENCE:-}" ] ||
     [ "${SHA_REFERENCE:-}" == "null" ] ||
     [ "${SHA_REFERENCE:-}" == "0000000000000000000000000000000000000000" ]; then
@@ -423,6 +438,19 @@ ValidateGitShaReference() {
   fi
 
   debug "Successfully validated SHA_REFERENCE: ${SHA_REFERENCE}"
+}
+
+ValidateGitHubEvent() {
+  local GITHUB_EVENT_NAME="${1}" && shift
+  local VALIDATE_ALL_CODEBASE="${1}" && shift
+  debug "Validating Super-linter configuration for specific GitHub events"
+
+  if [[ "${GITHUB_EVENT_NAME:-"GITHUB_EVENT_NAME not set"}" == "schedule" ]]; then
+    if [[ "${VALIDATE_ALL_CODEBASE:-"VALIDATE_ALL_CODEBASE not set"}" == "false" ]]; then
+      warn "${GITHUB_EVENT_NAME} (https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule) sets GITHUB_SHA as the last commit on the default branch, and GITHUB_REF to the default branch. When triggering schedule event, we recommend that you set VALIDATE_ALL_CODEBASE to true, otherwise Super-linter will not find any file to check."
+      return 1
+    fi
+  fi
 }
 
 InitializeRootCommitSha() {

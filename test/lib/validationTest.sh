@@ -191,6 +191,10 @@ function ValidateFindModeTest() {
   FUNCTION_NAME="${FUNCNAME[0]}"
   info "${FUNCTION_NAME} start"
 
+  local USE_FIND_ALGORITHM
+  local VALIDATE_ALL_CODEBASE
+  local DEFAULT_BRANCH
+
   USE_FIND_ALGORITHM="true"
   VALIDATE_ALL_CODEBASE="false"
   if ValidateFindMode; then
@@ -229,6 +233,18 @@ function ValidateFindModeTest() {
     fatal "USE_FIND_ALGORITHM=${USE_FIND_ALGORITHM}, VALIDATE_ALL_CODEBASE=${VALIDATE_ALL_CODEBASE} should have passed validation"
   fi
   unset USE_FIND_ALGORITHM
+  unset VALIDATE_ALL_CODEBASE
+
+  USE_FIND_ALGORITHM="true"
+  DEFAULT_BRANCH="branch"
+  VALIDATE_ALL_CODEBASE="true"
+  if ValidateFindMode; then
+    fatal "USE_FIND_ALGORITHM=${USE_FIND_ALGORITHM}, DEFAULT_BRANCH=${DEFAULT_BRANCH} should have failed validation"
+  else
+    info "USE_FIND_ALGORITHM=${USE_FIND_ALGORITHM}, DEFAULT_BRANCH=${DEFAULT_BRANCH} failed validation as expected"
+  fi
+  unset USE_FIND_ALGORITHM
+  unset DEFAULT_BRANCH
   unset VALIDATE_ALL_CODEBASE
 
   notice "${FUNCTION_NAME} PASS"
@@ -580,14 +596,15 @@ InitializeGitBeforeShaReferenceFastForwardPushTest() {
     git -C "${GITHUB_WORKSPACE}" add .
     git -C "${GITHUB_WORKSPACE}" commit -m "add file-${i}"
 
-    # Set EXPECTED_GITHUB_BEFORE_SHA to the initial commit because it's the only
-    # one we don't push
     if [[ "${i}" -eq 0 ]]; then
-      local EXPECTED_GITHUB_BEFORE_SHA
-      EXPECTED_GITHUB_BEFORE_SHA="$(git -C "${GITHUB_WORKSPACE}" rev-parse HEAD)"
-      debug "Setting EXPECTED_GITHUB_BEFORE_SHA to ${EXPECTED_GITHUB_BEFORE_SHA}"
+      local GIT_ROOT_COMMIT_SHA
+      GIT_ROOT_COMMIT_SHA="$(git -C "${GITHUB_WORKSPACE}" rev-parse HEAD)"
+      debug "Setting GIT_ROOT_COMMIT_SHA to ${GIT_ROOT_COMMIT_SHA}"
     fi
   done
+  # Set EXPECTED_GITHUB_BEFORE_SHA to the initial commit because it's the only
+  # one we don't push
+  local EXPECTED_GITHUB_BEFORE_SHA="${GIT_ROOT_COMMIT_SHA}"
 
   git_log_graph "${GITHUB_WORKSPACE}"
 
@@ -612,13 +629,24 @@ InitializeGitBeforeShaReferenceMergeCommitTest() {
   initialize_git_repository "${GITHUB_WORKSPACE}"
 
   local -i COMMIT_COUNT=3
+  local EXPECTED_GITHUB_BEFORE_SHA
 
-  if [[ "${EVENT_NAME}" == "pull_request" ]]; then
+  if [[ "${EVENT_NAME}" == "pull_request" ]] ||
+    [[ "${EVENT_NAME}" == "pull_request_target" ]] ||
+    [[ "${EVENT_NAME}" == "schedule" ]] ||
+    [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
     initialize_git_repository_contents "${GITHUB_WORKSPACE}" "${COMMIT_COUNT}" "true" "${EVENT_NAME}" "true" "false" "false" "true"
   elif [[ "${EVENT_NAME}" == "merge_group" ]]; then
     initialize_git_repository_contents "${GITHUB_WORKSPACE}" "${COMMIT_COUNT}" "true" "${EVENT_NAME}" "false" "false" "false" "true"
+  else
+    fatal "Event not handled when testing InitializeGitBeforeShaReference: ${EVENT_NAME}"
   fi
-  local EXPECTED_GITHUB_BEFORE_SHA="${GIT_ROOT_COMMIT_SHA}"
+
+  if [[ "${EVENT_NAME}" == "schedule" ]]; then
+    EXPECTED_GITHUB_BEFORE_SHA="${GITHUB_SHA}"
+  else
+    EXPECTED_GITHUB_BEFORE_SHA="${GIT_ROOT_COMMIT_SHA}"
+  fi
   debug "Setting EXPECTED_GITHUB_BEFORE_SHA to ${EXPECTED_GITHUB_BEFORE_SHA}"
 
   GITHUB_SHA="${GITHUB_PULL_REQUEST_HEAD_SHA}"
@@ -643,12 +671,42 @@ InitializeGitBeforeShaReferenceMergeCommitPullRequestTest() {
   notice "${FUNCTION_NAME} PASS"
 }
 
+InitializeGitBeforeShaReferenceMergeCommitPullRequestTargetGroupTest() {
+  local FUNCTION_NAME
+  FUNCTION_NAME="${FUNCNAME[0]}"
+  info "${FUNCTION_NAME} start"
+
+  InitializeGitBeforeShaReferenceMergeCommitTest "pull_request_target"
+
+  notice "${FUNCTION_NAME} PASS"
+}
+
 InitializeGitBeforeShaReferenceMergeCommitMergeGroupTest() {
   local FUNCTION_NAME
   FUNCTION_NAME="${FUNCNAME[0]}"
   info "${FUNCTION_NAME} start"
 
   InitializeGitBeforeShaReferenceMergeCommitTest "merge_group"
+
+  notice "${FUNCTION_NAME} PASS"
+}
+
+InitializeGitBeforeShaReferenceMergeCommitScheduleTest() {
+  local FUNCTION_NAME
+  FUNCTION_NAME="${FUNCNAME[0]}"
+  info "${FUNCTION_NAME} start"
+
+  InitializeGitBeforeShaReferenceMergeCommitTest "schedule"
+
+  notice "${FUNCTION_NAME} PASS"
+}
+
+InitializeGitBeforeShaReferenceMergeCommitWorkflowDispatchTest() {
+  local FUNCTION_NAME
+  FUNCTION_NAME="${FUNCNAME[0]}"
+  info "${FUNCTION_NAME} start"
+
+  InitializeGitBeforeShaReferenceMergeCommitTest "workflow_dispatch"
 
   notice "${FUNCTION_NAME} PASS"
 }
@@ -704,7 +762,7 @@ InitializeGitBeforeShaReferenceMergeDefaultBranchInPullRequestBranchTest() {
   git -C "${GITHUB_WORKSPACE}" commit -m "feat: commit on ${FEATURE_BRANCH_1_NAME}"
 
   local -i COMMIT_COUNT
-  COMMIT_COUNT=$(git -C "${GITHUB_WORKSPACE}" rev-list --count main.."${FEATURE_BRANCH_1_NAME}")
+  COMMIT_COUNT=$(git -C "${GITHUB_WORKSPACE}" rev-list --count "${DEFAULT_BRANCH}".."${FEATURE_BRANCH_1_NAME}")
   debug "Setting COMMIT_COUNT to ${COMMIT_COUNT}"
 
   git_log_graph "${GITHUB_WORKSPACE}"
@@ -803,6 +861,29 @@ ValidateGitShaReferenceTest() {
   local GITHUB_BEFORE_SHA_TEST="${GIT_ROOT_COMMIT_SHA}"
   if ! ValidateGitShaReference "${GITHUB_BEFORE_SHA_TEST}"; then
     fatal "ValidateGitShaReference should have passed for ${GITHUB_BEFORE_SHA_TEST}"
+  fi
+
+  notice "${FUNCTION_NAME} PASS"
+}
+
+ValidateGitHubEventTest() {
+  local FUNCTION_NAME
+  FUNCTION_NAME="${FUNCNAME[0]}"
+  info "${FUNCTION_NAME} start"
+
+  local GITHUB_EVENT_NAME_TEST
+  local VALIDATE_ALL_CODEBASE_TEST
+
+  GITHUB_EVENT_NAME_TEST="schedule"
+  VALIDATE_ALL_CODEBASE_TEST="false"
+  if ValidateGitHubEvent "${GITHUB_EVENT_NAME_TEST}" "${VALIDATE_ALL_CODEBASE_TEST}"; then
+    fatal "ValidateGitHubEvent with GITHUB_EVENT_NAME_TEST: ${GITHUB_EVENT_NAME_TEST} and VALIDATE_ALL_CODEBASE_TEST: ${VALIDATE_ALL_CODEBASE_TEST} should have failed validation"
+  fi
+
+  GITHUB_EVENT_NAME_TEST="schedule"
+  VALIDATE_ALL_CODEBASE_TEST="true"
+  if ! ValidateGitHubEvent "${GITHUB_EVENT_NAME_TEST}" "${VALIDATE_ALL_CODEBASE_TEST}"; then
+    fatal "ValidateGitHubEvent with GITHUB_EVENT_NAME_TEST: ${GITHUB_EVENT_NAME_TEST} and VALIDATE_ALL_CODEBASE_TEST: ${VALIDATE_ALL_CODEBASE_TEST} should have passed validation"
   fi
 
   notice "${FUNCTION_NAME} PASS"
@@ -934,6 +1015,10 @@ InitializeGitHubWorkspaceTest() {
   fi
   unset GITHUB_WORKSPACE
 
+  # Restore default GITHUB_WORKSPACE
+  # shellcheck source=/dev/null
+  source /action/lib/globals/main.sh
+
   notice "${FUNCTION_NAME} PASS"
 }
 
@@ -1007,10 +1092,14 @@ CheckIfFixModeIsEnabledTest
 ValidateCommitlintConfigurationTest
 InitializeGitBeforeShaReferenceFastForwardPushTest
 InitializeGitBeforeShaReferenceMergeCommitPullRequestTest
+InitializeGitBeforeShaReferenceMergeCommitPullRequestTargetGroupTest
 InitializeGitBeforeShaReferenceMergeCommitMergeGroupTest
+InitializeGitBeforeShaReferenceMergeCommitScheduleTest
+InitializeGitBeforeShaReferenceMergeCommitWorkflowDispatchTest
 InitializeGitBeforeShaReferenceMergeDefaultBranchInPullRequestBranchTest
 ValidateGitShaReferenceTest
 InitializeRootCommitShaTest
+ValidateGitHubEventTest
 DeprecatedConfigurationFileExistsTest
 InitializeDefaultBranchTest
 InitializeDefaultBranchDefaultValueTest

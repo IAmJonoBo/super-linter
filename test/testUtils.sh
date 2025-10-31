@@ -16,6 +16,8 @@ CREATE_LOG_FILE="true"
 source "lib/functions/log.sh"
 
 # shellcheck source=/dev/null
+source "lib/globals/main.sh"
+# shellcheck source=/dev/null
 source "lib/globals/languages.sh"
 
 # Because we need variables defined there
@@ -42,11 +44,6 @@ PULL_REQUEST_BRANCH_NAME="pull/6637/merge"
 
 # Set an arbitrary new branch name
 NEW_BRANCH_NAME="branch-1"
-
-# TODO: use TEST_CASE_FOLDER instead of redefining this after we extract the
-# initialization of TEST_CASE_FOLDER from linter.sh
-# shellcheck disable=SC2034
-LINTERS_TEST_CASE_DIRECTORY="test/linters"
 
 # shellcheck disable=SC2034
 LANGUAGES_WITH_FIX_MODE=(
@@ -183,6 +180,15 @@ AssertFileContentsMatchIgnoreHtmlComments() {
   fi
 }
 
+AssertFileContains() {
+  local FILE_PATH="${1}" && shift
+  local STRING_TO_SEARCH="${1}" && shift
+  if ! grep -qxF "${STRING_TO_SEARCH}" "${FILE_PATH}"; then
+    debug "${FILE_PATH} doesn't contain ${STRING_TO_SEARCH}"
+    return 1
+  fi
+}
+
 IsLanguageInSlimImage() {
   local LANGUAGE="${1}"
   if [[ " ${LANGUAGES_NOT_IN_SLIM_IMAGE[*]} " =~ [[:space:]]${LANGUAGE}[[:space:]] ]]; then
@@ -217,16 +223,16 @@ AreAnsiColorCodesInFile() {
 
 RemoveTestLeftovers() {
   local LEFTOVERS_TO_CLEAN=()
-  LEFTOVERS_TO_CLEAN+=("${SUPER_LINTER_WORKSPACE}/${LINTERS_TEST_CASE_DIRECTORY}/rust_clippy/bad/target")
-  LEFTOVERS_TO_CLEAN+=("${SUPER_LINTER_WORKSPACE}/${LINTERS_TEST_CASE_DIRECTORY}/rust_clippy/bad/Cargo.lock")
-  LEFTOVERS_TO_CLEAN+=("${SUPER_LINTER_WORKSPACE}/${LINTERS_TEST_CASE_DIRECTORY}/rust_clippy/good/target")
-  LEFTOVERS_TO_CLEAN+=("${SUPER_LINTER_WORKSPACE}/${LINTERS_TEST_CASE_DIRECTORY}/rust_clippy/good/Cargo.lock")
+  LEFTOVERS_TO_CLEAN+=("${SUPER_LINTER_WORKSPACE}/${TEST_CASE_FOLDER}/rust_clippy/bad/target")
+  LEFTOVERS_TO_CLEAN+=("${SUPER_LINTER_WORKSPACE}/${TEST_CASE_FOLDER}/rust_clippy/bad/Cargo.lock")
+  LEFTOVERS_TO_CLEAN+=("${SUPER_LINTER_WORKSPACE}/${TEST_CASE_FOLDER}/rust_clippy/good/target")
+  LEFTOVERS_TO_CLEAN+=("${SUPER_LINTER_WORKSPACE}/${TEST_CASE_FOLDER}/rust_clippy/good/Cargo.lock")
   LEFTOVERS_TO_CLEAN+=("${SUPER_LINTER_WORKSPACE}/dependencies/composer/vendor")
   # Delete leftovers in pwd in case the workspace is not pwd
-  LEFTOVERS_TO_CLEAN+=("$(pwd)/${LINTERS_TEST_CASE_DIRECTORY}/rust_clippy/bad/target")
-  LEFTOVERS_TO_CLEAN+=("$(pwd)/${LINTERS_TEST_CASE_DIRECTORY}/rust_clippy/bad/Cargo.lock")
-  LEFTOVERS_TO_CLEAN+=("$(pwd)/${LINTERS_TEST_CASE_DIRECTORY}/rust_clippy/good/target")
-  LEFTOVERS_TO_CLEAN+=("$(pwd)/${LINTERS_TEST_CASE_DIRECTORY}/rust_clippy/good/Cargo.lock")
+  LEFTOVERS_TO_CLEAN+=("$(pwd)/${TEST_CASE_FOLDER}/rust_clippy/bad/target")
+  LEFTOVERS_TO_CLEAN+=("$(pwd)/${TEST_CASE_FOLDER}/rust_clippy/bad/Cargo.lock")
+  LEFTOVERS_TO_CLEAN+=("$(pwd)/${TEST_CASE_FOLDER}/rust_clippy/good/target")
+  LEFTOVERS_TO_CLEAN+=("$(pwd)/${TEST_CASE_FOLDER}/rust_clippy/good/Cargo.lock")
   LEFTOVERS_TO_CLEAN+=("$(pwd)/dependencies/composer/vendor")
 
   debug "Cleaning eventual test leftovers: ${LEFTOVERS_TO_CLEAN[*]}"
@@ -334,7 +340,9 @@ initialize_git_repository_contents() {
 
   debug "Simulating a GitHub ${GITHUB_EVENT_NAME:-"not set"} event"
 
-  if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+  if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]] ||
+    [[ "${GITHUB_EVENT_NAME}" == "pull_request_target" ]] ||
+    [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
     debug "Switching to the ${DEFAULT_BRANCH} branch"
     git -C "${GIT_REPOSITORY_PATH}" switch "${DEFAULT_BRANCH}"
 
@@ -375,7 +383,8 @@ initialize_git_repository_contents() {
       --no-ff \
       "${NEW_BRANCH_NAME}"
   elif [[ "${GITHUB_EVENT_NAME}" == "push" ]] ||
-    [[ "${GITHUB_EVENT_NAME}" == "merge_group" ]]; then
+    [[ "${GITHUB_EVENT_NAME}" == "merge_group" ]] ||
+    [[ "${GITHUB_EVENT_NAME}" == "schedule" ]]; then
     if [[ "${CREATE_NEW_BRANCH}" == "true" ]]; then
       if [[ "${FORCE_MERGE_COMMIT}" == "true" ]]; then
         git -C "${GIT_REPOSITORY_PATH}" switch "${DEFAULT_BRANCH}"
@@ -394,7 +403,7 @@ initialize_git_repository_contents() {
       debug "Pushed directly to the default branch. No need to merge."
     fi
   else
-    fatal "Handling GITHUB_EVENT_NAME (${GITHUB_EVENT_NAME:-"not set"}) not implemented"
+    fatal "Handling GITHUB_EVENT_NAME (${GITHUB_EVENT_NAME:-"not set"}) not implemented when initializing Git repository contents"
   fi
 
   if [[ "${INITIALIZE_GITHUB_SHA:-}" == "true" ]]; then

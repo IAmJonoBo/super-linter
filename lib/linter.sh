@@ -7,11 +7,16 @@ set -o pipefail
 IMAGE="${IMAGE:-standard}"
 
 #########################
-# Source Function Files #
+# Source Globals and function Files #
 #########################
 # Source log functions and variables early so we can use them ASAP
 # shellcheck source=/dev/null
 source /action/lib/functions/log.sh # Source the function script(s)
+
+# shellcheck source=/dev/null
+source /action/lib/globals/main.sh
+# shellcheck source=/dev/null
+source /action/lib/globals/validation.sh
 
 # shellcheck source=/dev/null
 source /action/lib/functions/buildFileList.sh # Source the function script(s)
@@ -184,16 +189,12 @@ ValidateBooleanConfigurationVariables
 ###########
 # GLOBALS #
 ###########
-DEFAULT_SUPER_LINTER_WORKSPACE="/tmp/lint"                                  # Fall-back value for the workspace
-DEFAULT_WORKSPACE="${DEFAULT_WORKSPACE:-${DEFAULT_SUPER_LINTER_WORKSPACE}}" # Default workspace if running locally
 FILTER_REGEX_INCLUDE="${FILTER_REGEX_INCLUDE:-""}"
 export FILTER_REGEX_INCLUDE
 FILTER_REGEX_EXCLUDE="${FILTER_REGEX_EXCLUDE:-""}"
 export FILTER_REGEX_EXCLUDE
 # shellcheck disable=SC2034 # Variable is referenced in other scripts
 RAW_FILE_ARRAY=() # Array of all files that were changed
-# shellcheck disable=SC2034 # Variable is referenced in other scripts
-TEST_CASE_FOLDER='test/linters' # Folder for test cases we should always ignore
 
 # Set the log level
 TF_LOG_LEVEL="info"
@@ -246,7 +247,7 @@ GetGitHubVars() {
   info "--------------------------------------------"
   info "Gathering GitHub information..."
 
-  if [[ ${RUN_LOCAL} != "false" ]]; then
+  if [[ "${RUN_LOCAL}" == "true" ]]; then
     info "RUN_LOCAL has been set to: ${RUN_LOCAL}. Bypassing GitHub Actions variables..."
 
     if [[ "${USE_FIND_ALGORITHM}" == "false" ]]; then
@@ -347,8 +348,14 @@ GetGitHubVars() {
       debug "Successfully found commit count for ${GITHUB_EVENT_NAME} event: ${GITHUB_EVENT_COMMIT_COUNT}"
     fi
 
-    if ! InitializeGitBeforeShaReference "${GITHUB_SHA}" "${GITHUB_EVENT_COMMIT_COUNT:-}" "${GIT_ROOT_COMMIT_SHA}" "${GITHUB_EVENT_NAME}" "${DEFAULT_BRANCH}"; then
-      fatal "Error while initializing GITHUB_BEFORE_SHA"
+    if [[ "${USE_FIND_ALGORITHM}" == "false" ]]; then
+      if ! InitializeGitBeforeShaReference "${GITHUB_SHA}" "${GITHUB_EVENT_COMMIT_COUNT:-}" "${GIT_ROOT_COMMIT_SHA}" "${GITHUB_EVENT_NAME}" "${DEFAULT_BRANCH}"; then
+        fatal "Error while initializing GITHUB_BEFORE_SHA"
+      fi
+    fi
+
+    if ! ValidateGitHubEvent "${GITHUB_EVENT_NAME}" "${VALIDATE_ALL_CODEBASE}" && [[ "${FAIL_ON_INVALID_GITHUB_ACTIONS_EVENT_CONFIGURATION}" == "true" ]]; then
+      fatal "Error while validating Super-linter configuration for specific GitHub Actions events"
     fi
   fi
 

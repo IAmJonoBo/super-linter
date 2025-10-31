@@ -12,28 +12,27 @@ FROM alpine/terragrunt:1.13.3 AS terragrunt
 FROM dotenvlinter/dotenv-linter:3.3.0 AS dotenv-linter
 FROM ghcr.io/terraform-linters/tflint:v0.59.1 AS tflint
 FROM alpine/helm:3.19.0 AS helm
-FROM golang:1.25.1-alpine AS golang
+FROM golang:1.25.3-alpine AS golang
 FROM golangci/golangci-lint:v2.5.0 AS golangci-lint
-FROM goreleaser/goreleaser:v2.12.3 AS goreleaser
+FROM goreleaser/goreleaser:v2.12.5 AS goreleaser
 FROM hadolint/hadolint:v2.14.0-alpine AS dockerfile-lint
 FROM registry.k8s.io/kustomize/kustomize:v5.7.1 AS kustomize
-FROM hashicorp/terraform:1.13.3 AS terraform
+FROM hashicorp/terraform:1.13.4 AS terraform
 FROM koalaman/shellcheck:v0.11.0 AS shellcheck
-FROM mstruebing/editorconfig-checker:v3.4.0 AS editorconfig-checker
+FROM mstruebing/editorconfig-checker:v3.4.1 AS editorconfig-checker
 FROM mvdan/shfmt:v3.12.0 AS shfmt
-FROM rhysd/actionlint:1.7.7 AS actionlint
-FROM scalameta/scalafmt:v3.9.10 AS scalafmt
+FROM rhysd/actionlint:1.7.8 AS actionlint
+FROM scalameta/scalafmt:v3.10.0 AS scalafmt
 FROM zricethezav/gitleaks:v8.28.0 AS gitleaks
 FROM yoheimuta/protolint:0.56.4 AS protolint
 FROM ghcr.io/clj-kondo/clj-kondo:2025.09.22-alpine AS clj-kondo
-FROM dart:3.9.3-sdk AS dart
-FROM mcr.microsoft.com/dotnet/sdk:9.0.305-alpine3.21 AS dotnet-sdk
-FROM mcr.microsoft.com/powershell:7.5-alpine-3.20 AS powershell
+FROM dart:3.9.4-sdk AS dart
+FROM mcr.microsoft.com/dotnet/sdk:9.0.306-alpine3.22 AS dotnet-sdk
 FROM composer/composer:2.8.12 AS php-composer
-FROM ghcr.io/aquasecurity/trivy:0.67.0 AS trivy
+FROM ghcr.io/aquasecurity/trivy:0.67.2 AS trivy
 FROM ghcr.io/yannh/kubeconform:v0.7.0 AS kubeconform
 
-FROM python:3.13.7-alpine3.22 AS python-base
+FROM python:3.14.0-alpine3.22 AS python-base
 
 FROM python-base AS clang-format
 
@@ -118,11 +117,11 @@ SHELL ["/bin/bash", "-o", "errexit", "-o", "nounset", "-o", "pipefail", "-c"]
 COPY scripts/install-lintr.sh scripts/install-r-package-or-fail.R /
 RUN /install-lintr.sh && rm -rf /install-lintr.sh /install-r-package-or-fail.R
 
-FROM powershell AS powershell-installer
+FROM dotnet-sdk AS powershell-installer
 
 # Copy the value of the PowerShell install directory to a file so we can reuse it
 # when copying PowerShell stuff in the main image
-RUN echo "${PS_INSTALL_FOLDER}" > /tmp/PS_INSTALL_FOLDER
+RUN dirname "$(readlink -f "$(which pwsh)")" > /tmp/PS_INSTALL_FOLDER
 
 FROM php-composer AS php-linters
 
@@ -564,7 +563,7 @@ RUN dotnet help
 # Install Powershell + PSScriptAnalyzer #
 #########################################
 COPY --from=powershell-installer /tmp/PS_INSTALL_FOLDER /tmp/PS_INSTALL_FOLDER
-COPY --from=powershell /opt/microsoft/powershell /opt/microsoft/powershell
+COPY --from=dotnet-sdk /usr/share/powershell /usr/share/powershell
 # Disable Powershell telemetry
 ENV POWERSHELL_TELEMETRY_OPTOUT=1
 ARG PSSA_VERSION='1.24.0'
